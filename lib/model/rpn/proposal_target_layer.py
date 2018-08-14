@@ -32,20 +32,20 @@ class _ProposalTargetLayer(nn.Module):
 
     def forward(self, all_rois, gt_boxes, num_boxes):
 
-        self.BBOX_NORMALIZE_MEANS = self.BBOX_NORMALIZE_MEANS.type_as(gt_boxes)
+        self.BBOX_NORMALIZE_MEANS = self.BBOX_NORMALIZE_MEANS.type_as(gt_boxes)#BBOX_NORMALIZE_MEANS与gt_boxes数据类型一致
         self.BBOX_NORMALIZE_STDS = self.BBOX_NORMALIZE_STDS.type_as(gt_boxes)
         self.BBOX_INSIDE_WEIGHTS = self.BBOX_INSIDE_WEIGHTS.type_as(gt_boxes)
 
         gt_boxes_append = gt_boxes.new(gt_boxes.size()).zero_()
-        gt_boxes_append[:,:,1:5] = gt_boxes[:,:,:4]
+        gt_boxes_append[:,:,1:5] = gt_boxes[:,:,:4]#只传递bbox的四个信息(xmin, ymin, xmax, ymax)
 
         # Include ground-truth boxes in the set of candidate rois
-        all_rois = torch.cat([all_rois, gt_boxes_append], 1)
-
+        all_rois = torch.cat([all_rois, gt_boxes_append], 1)#将rois和gt_boxes按列堆叠
+        
         num_images = 1
-        rois_per_image = int(cfg.TRAIN.BATCH_SIZE / num_images)
-        fg_rois_per_image = int(np.round(cfg.TRAIN.FG_FRACTION * rois_per_image))
-        fg_rois_per_image = 1 if fg_rois_per_image == 0 else fg_rois_per_image
+        rois_per_image = int(cfg.TRAIN.BATCH_SIZE / num_images)#每幅图像的rois数量
+        fg_rois_per_image = int(np.round(cfg.TRAIN.FG_FRACTION * rois_per_image))#前景rois数量
+        fg_rois_per_image = 1 if fg_rois_per_image == 0 else fg_rois_per_image#至少有一个前景roi
 
         labels, rois, gt_assign, bbox_targets, bbox_inside_weights = self._sample_rois_pytorch(
             all_rois, gt_boxes, fg_rois_per_image,
