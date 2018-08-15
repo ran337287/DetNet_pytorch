@@ -16,7 +16,7 @@ import numpy.random as npr
 from ..utils.config import cfg
 from .bbox_transform import bbox_overlaps_batch, bbox_transform_batch
 import pdb
-
+#按照rois找到所需的groundtruth类别和坐标变换信息
 class _ProposalTargetLayer(nn.Module):
     """
     Assign object detection proposals to ground-truth targets. Produces proposal
@@ -40,7 +40,8 @@ class _ProposalTargetLayer(nn.Module):
         gt_boxes_append[:,:,1:5] = gt_boxes[:,:,:4]#只传递bbox的四个信息(xmin, ymin, xmax, ymax)
 
         # Include ground-truth boxes in the set of candidate rois
-        all_rois = torch.cat([all_rois, gt_boxes_append], 1)#将rois和gt_boxes按列堆叠
+        all_rois = torch.cat([all_rois, gt_boxes_append], 1)#将rois和gt_boxes按列堆叠，
+        #将groundtruth框加入了rpn输出选择出的框，相当于增加前景的数量。
         
         num_images = 1
         rois_per_image = int(cfg.TRAIN.BATCH_SIZE / num_images)#每幅图像的rois数量
