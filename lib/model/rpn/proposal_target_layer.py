@@ -49,9 +49,10 @@ class _ProposalTargetLayer(nn.Module):
 
         labels, rois, gt_assign, bbox_targets, bbox_inside_weights = self._sample_rois_pytorch(
             all_rois, gt_boxes, fg_rois_per_image,
-            rois_per_image, self._num_classes)
+            rois_per_image, self._num_classes)#每幅图像选取包含rois_per_image个样本
 
         bbox_outside_weights = (bbox_inside_weights > 0).float()
+        #bbox_inside_weight每个坐标的diff的权值(取值0或1),bbox_outside_weights每个坐标的diff平方的权值(取值0或1)
 
         return rois, labels, gt_assign, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
@@ -62,7 +63,7 @@ class _ProposalTargetLayer(nn.Module):
     def reshape(self, bottom, top):
         """Reshaping happens during the call to forward."""
         pass
-
+    #labels_batch每批的labels，计算前景rois的索引，得到真实的bbox_targets和bbox_inside_weights.(应当回归的是前景)
     def _get_bbox_regression_labels_pytorch(self, bbox_target_data, labels_batch, num_classes):
         """Bounding-box regression targets (bbox_target_data) are stored in a
         compact form b x N x (class, tx, ty, tw, th)
@@ -84,7 +85,7 @@ class _ProposalTargetLayer(nn.Module):
             # assert clss[b].sum() > 0
             if clss[b].sum() == 0:
                 continue
-            inds = torch.nonzero(clss[b] > 0).view(-1)
+            inds = torch.nonzero(clss[b] > 0).view(-1)#前景rois的索引
             for i in range(inds.numel()):
                 ind = inds[i]
                 bbox_targets[b, ind, :] = bbox_target_data[b, ind, :]
@@ -93,7 +94,7 @@ class _ProposalTargetLayer(nn.Module):
         return bbox_targets, bbox_inside_weights
 
 
-    def _compute_targets_pytorch(self, ex_rois, gt_rois):
+    def _compute_targets_pytorch(self, ex_rois, gt_rois):#按批计算偏移量相关
         """Compute bounding-box regression targets for an image."""
 
         assert ex_rois.size(1) == gt_rois.size(1)
@@ -112,14 +113,14 @@ class _ProposalTargetLayer(nn.Module):
 
         return targets
 
-
+    #每幅图像选取roi_per_image个rois,包含前景和背景
     def _sample_rois_pytorch(self, all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
         """Generate a random sample of RoIs comprising foreground and background
         examples.
         """
         # overlaps: (rois x gt_boxes)
 
-        overlaps = bbox_overlaps_batch(all_rois, gt_boxes)
+        overlaps = bbox_overlaps_batch(all_rois, gt_boxes)#按批计算输入的rois和gt_boxes的overlaps
         
         max_overlaps, gt_assignment = torch.max(overlaps, 2)
 
@@ -139,17 +140,18 @@ class _ProposalTargetLayer(nn.Module):
         gt_rois_batch = all_rois.new(batch_size, rois_per_image, 5).zero_()
         # Guard against the case when an image has fewer than max_fg_rois_per_image
         # foreground RoIs
-        for i in range(batch_size):
+        for i in range(batch_size):#
 
-            fg_inds = torch.nonzero(max_overlaps[i] >= cfg.TRAIN.FG_THRESH).view(-1)
+            fg_inds = torch.nonzero(max_overlaps[i] >= cfg.TRAIN.FG_THRESH).view(-1)#选取前景rois
             fg_num_rois = fg_inds.numel()
 
             # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
-            bg_inds = torch.nonzero((max_overlaps[i] < cfg.TRAIN.BG_THRESH_HI) &
+            bg_inds = torch.nonzero((max_overlaps[i] < cfg.TRAIN.BG_THRESH_HI) &#选取背景rois
                                     (max_overlaps[i] >= cfg.TRAIN.BG_THRESH_LO)).view(-1)
             bg_num_rois = bg_inds.numel()
-
-            if fg_num_rois > 0 and bg_num_rois > 0:
+            
+            #计算前景rois数量换背景rois数量。并得到索引
+            if fg_num_rois > 0 and bg_num_rois > 0:#包含前景和背景情况
                 # sampling fg
                 fg_rois_per_this_image = min(fg_rois_per_image, fg_num_rois)
 
@@ -170,7 +172,7 @@ class _ProposalTargetLayer(nn.Module):
                 rand_num = torch.from_numpy(rand_num).type_as(gt_boxes).long()
                 bg_inds = bg_inds[rand_num]
 
-            elif fg_num_rois > 0 and bg_num_rois == 0:
+            elif fg_num_rois > 0 and bg_num_rois == 0:#仅包含前景
                 # sampling fg
                 #rand_num = torch.floor(torch.rand(rois_per_image) * fg_num_rois).long().cuda()
                 rand_num = np.floor(np.random.rand(rois_per_image) * fg_num_rois)
@@ -178,7 +180,7 @@ class _ProposalTargetLayer(nn.Module):
                 fg_inds = fg_inds[rand_num]
                 fg_rois_per_this_image = rois_per_image
                 bg_rois_per_this_image = 0
-            elif bg_num_rois > 0 and fg_num_rois == 0:
+            elif bg_num_rois > 0 and fg_num_rois == 0:#仅包含背景
                 # sampling bg
                 #rand_num = torch.floor(torch.rand(rois_per_image) * bg_num_rois).long().cuda()
                 rand_num = np.floor(np.random.rand(rois_per_image) * bg_num_rois)
@@ -192,26 +194,28 @@ class _ProposalTargetLayer(nn.Module):
                 raise ValueError("bg_num_rois = 0 and fg_num_rois = 0, this should not happen!")
 
             # The indices that we're selecting (both fg and bg)
-            keep_inds = torch.cat([fg_inds, bg_inds], 0)
+            keep_inds = torch.cat([fg_inds, bg_inds], 0)#得到fg和bg rois的索引
 
             # Select sampled values from various arrays:
-            labels_batch[i].copy_(labels[i][keep_inds])
+            labels_batch[i].copy_(labels[i][keep_inds])#第i幅图像的label
 
             # Clamp labels for the background RoIs to 0
-            if fg_rois_per_this_image < rois_per_image:
+            if fg_rois_per_this_image < rois_per_image:#将bg rois的label置0
                 labels_batch[i][fg_rois_per_this_image:] = 0
 
-            rois_batch[i] = all_rois[i][keep_inds]
+            rois_batch[i] = all_rois[i][keep_inds]#根据前景背景索引得到rois
             rois_batch[i,:,0] = i
 
             # TODO: check the below line when batch_size > 1, no need to add offset here
-            gt_assign_batch[i] = gt_assignment[i][keep_inds]
+            gt_assign_batch[i] = gt_assignment[i][keep_inds]#得到第i幅图像的映射的gt_boxes索引
 
-            gt_rois_batch[i] = gt_boxes[i][gt_assignment[i][keep_inds]]
+            gt_rois_batch[i] = gt_boxes[i][gt_assignment[i][keep_inds]]#得到第i幅图像的映射的gt_boxes
+            #前面已经使得每幅图像至少包含一个前景roi,故gt_rois_batch内至少含一个前景roi
 
         bbox_target_data = self._compute_targets_pytorch(
-                rois_batch[:,:,1:5], gt_rois_batch[:,:,:4])
-
+                rois_batch[:,:,1:5], gt_rois_batch[:,:,:4])#计算gt_rois(包含前景背景)相对于rois的偏移量
+        
+        #labels_batch每批的labels，计算前景rois的索引，得到真实的bbox_targets和bbox_inside_weights.(应当回归的是前景)
         bbox_targets, bbox_inside_weights = \
                 self._get_bbox_regression_labels_pytorch(bbox_target_data, labels_batch, num_classes)
 
