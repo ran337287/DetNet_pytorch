@@ -37,8 +37,8 @@ except NameError:
 # <<<< obsolete
 
 
-class pascal_voc(imdb):
-    def __init__(self, image_set, year, devkit_path=None):
+class pascal_voc(imdb):#继承imdb类
+    def __init__(self, image_set, year, devkit_path=None):#初始化函数，
         imdb.__init__(self, 'voc_' + year + '_' + image_set)
         self._year = year
         self._image_set = image_set
@@ -73,19 +73,19 @@ class pascal_voc(imdb):
         assert os.path.exists(self._data_path), \
             'Path does not exist: {}'.format(self._data_path)
 
-    def image_path_at(self, i):
+    def image_path_at(self, i):#返回第i个图像样本的path
         """
         Return the absolute path to image i in the image sequence.
         """
-        return self.image_path_from_index(self._image_index[i])
+        return self.image_path_from_index(self._image_index[i])#返回第i个图像样本的path
 
-    def image_id_at(self, i):
+    def image_id_at(self, i):#返回 i
         """
         Return the absolute path to image i in the image sequence.
         """
         return i
 
-    def image_path_from_index(self, index):
+    def image_path_from_index(self, index):#返回第index个图像样本的path
         """
         Construct an image path from the image's "index" identifier.
         """
@@ -95,7 +95,7 @@ class pascal_voc(imdb):
             'Path does not exist: {}'.format(image_path)
         return image_path
 
-    def _load_image_set_index(self):
+    def _load_image_set_index(self):#加载样本的list文件
         """
         Load the indexes listed in this dataset's image set file.
         """
@@ -109,26 +109,26 @@ class pascal_voc(imdb):
             image_index = [x.strip() for x in f.readlines()]
         return image_index
 
-    def _get_default_path(self):
+    def _get_default_path(self):#返回数据集地址
         """
         Return the default path where PASCAL VOC is expected to be installed.
         """
         return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)
 
-    def gt_roidb(self):
+    def gt_roidb(self):#读取并返回ground_truth的db
         """
         Return the database of ground-truth regions of interest.
 
         This function loads/saves from/to a cache file to speed up future calls.
         """
-        cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
-        if os.path.exists(cache_file):
+        cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')#寻找cache路径下的以‘.pkl’文件
+        if os.path.exists(cache_file):#若存在则直接读取提升效率，更换数据集时想先删除cache文件
             with open(cache_file, 'rb') as fid:
                 roidb = pickle.load(fid)
             print('{} gt roidb loaded from {}'.format(self.name, cache_file))
             return roidb
 
-        gt_roidb = [self._load_pascal_annotation(index)
+        gt_roidb = [self._load_pascal_annotation(index)#对每个样本加载db，最后保存gt_roidb文件
                     for index in self.image_index]
         with open(cache_file, 'wb') as fid:
             pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
@@ -136,7 +136,7 @@ class pascal_voc(imdb):
 
         return gt_roidb
 
-    def selective_search_roidb(self):
+    def selective_search_roidb(self):#同样返回roidb数据对象
         """
         Return the database of selective search regions of interest.
         Ground-truth ROIs are also included.
@@ -146,7 +146,7 @@ class pascal_voc(imdb):
         cache_file = os.path.join(self.cache_path,
                                   self.name + '_selective_search_roidb.pkl')
 
-        if os.path.exists(cache_file):
+        if os.path.exists(cache_file):#数据文件已存在，则直接加载，每次更换数据集时，需把data/cache的数据删除
             with open(cache_file, 'rb') as fid:
                 roidb = pickle.load(fid)
             print('{} ss roidb loaded from {}'.format(self.name, cache_file))
@@ -202,7 +202,8 @@ class pascal_voc(imdb):
 
         return self.create_roidb_from_box_list(box_list, gt_roidb)
 
-    def _load_pascal_annotation(self, index):
+    def _load_pascal_annotation(self, index):#加载gt-boxes,'gt_classes','gt_ishard','gt_overlaps','flipped','seg_areas'的具体实现
+
         """
         Load image and bounding boxes info from XML file in the PASCAL VOC
         format.
