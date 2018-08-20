@@ -49,11 +49,11 @@ class _AnchorTargetLayer_FPN(nn.Module):
         #   apply predicted bbox deltas at cell i to each of the 9 anchors
         # filter out-of-image anchors
 
-        scores = input[0]
-        gt_boxes = input[1]
+        scores = input[0] #[N, (num_anchors*num_feat_pixels), 2]
+        gt_boxes = input[1] #[N, num_gt_boxes, 5]
         im_info = input[2]
         num_boxes = input[3]
-        feat_shapes = input[4]
+        feat_shapes = input[4]  `
 
         # NOTE: need to change
         # height, width = scores.size(2), scores.size(3)
@@ -62,95 +62,101 @@ class _AnchorTargetLayer_FPN(nn.Module):
         batch_size = gt_boxes.size(0)
 
         anchors = torch.from_numpy(generate_anchors_all_pyramids(self._fpn_scales, self._anchor_ratios, 
-                feat_shapes, self._fpn_feature_strides, self._fpn_anchor_stride)).type_as(scores)    
-        total_anchors = anchors.size(0)
+                feat_shapes, self._fpn_feature_strides, self._fpn_anchor_stride)).type_as(scores)   #计算anchor_boxes [x1,y1,x2,y2]
+        total_anchors = anchors.size(0)#anchor的数量
         
         keep = ((anchors[:, 0] >= -self._allowed_border) &
                 (anchors[:, 1] >= -self._allowed_border) &
                 (anchors[:, 2] < long(im_info[0][1]) + self._allowed_border) &
-                (anchors[:, 3] < long(im_info[0][0]) + self._allowed_border))
+                (anchors[:, 3] < long(im_info[0][0]) + self._allowed_border))#筛选掉处于图像边缘的anchor boxes,
+                                                                             #这些boxes的x,y可能超出图像坐标范围
 
         inds_inside = torch.nonzero(keep).view(-1)
 
         # keep only inside anchors
-        anchors = anchors[inds_inside, :]
-
+        anchors = anchors[inds_inside, :]#保留位于图像内部的anchors,num_inside_anchors
+                                        
         # label: 1 is positive, 0 is negative, -1 is dont care
         labels = gt_boxes.new(batch_size, inds_inside.size(0)).fill_(-1)
         bbox_inside_weights = gt_boxes.new(batch_size, inds_inside.size(0)).zero_()
         bbox_outside_weights = gt_boxes.new(batch_size, inds_inside.size(0)).zero_()
 
-        overlaps = bbox_overlaps_batch(anchors, gt_boxes)
+        overlaps = bbox_overlaps_batch(anchors, gt_boxes)#计算anchors和gt_boxes的iou
+                                                         # [N, num_inside_anchors, num_gt_boxes]
 
-        max_overlaps, argmax_overlaps = torch.max(overlaps, 2)
-        gt_max_overlaps, _ = torch.max(overlaps, 1)
+        max_overlaps, argmax_overlaps = torch.max(overlaps, 2)# max_overlaps=[N，num_inside_anchors]找到与anchor映射的iou最大的gt_boxes,及其iou
+        gt_max_overlaps, _ = torch.max(overlaps, 1)# gt_max_overlaps=[N, num_gt_boxes], 找到与gt_boxes映射的iou最大的anchor,及其iou
 
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
+            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0 #设置负样本标签
 
-        gt_max_overlaps[gt_max_overlaps==0] = 1e-5
-        keep = torch.sum(overlaps.eq(gt_max_overlaps.view(batch_size,1,-1).expand_as(overlaps)), 2)
-
-        if torch.sum(keep) > 0:
+        gt_max_overlaps[gt_max_overlaps==0] = 1e-5 #0样本赋值是为了不与overlaps相等
+        keep = torch.sum(overlaps.eq(gt_max_overlaps.view(batch_size,1,-1).expand_as(overlaps)), 2)#每幅图像的overlaps与gt_max_overlaps对应
+                                                                                                   #统计最大iou
+                                                                                                   #keep=[N,num_inside_anchors]
+        if torch.sum(keep) > 0:#将最大iou的label置于1
             labels[keep>0] = 1
 
         # fg label: above threshold IOU
-        labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
+        labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1#正样本
 
         if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
+            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0#负样本
 
-        num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)
+        num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)#前景数量 0.5*256=128,总的正负样本数一共256
 
-        sum_fg = torch.sum((labels == 1).int(), 1)
-        sum_bg = torch.sum((labels == 0).int(), 1)
+        sum_fg = torch.sum((labels == 1).int(), 1)#标签中前景数量
+        sum_bg = torch.sum((labels == 0).int(), 1)#标签中背景数量
 
-        for i in range(batch_size):
+        for i in range(batch_size):#忽略过多的前景背景样本
             # subsample positive labels if we have too many
-            if sum_fg[i] > num_fg:
+            if sum_fg[i] > num_fg:#采样的前景数量过多
                 fg_inds = torch.nonzero(labels[i] == 1).view(-1)
                 # torch.randperm seems has a bug on multi-gpu setting that cause the segfault. 
                 # See https://github.com/pytorch/pytorch/issues/1868 for more details.
                 # use numpy instead.                
                 #rand_num = torch.randperm(fg_inds.size(0)).type_as(gt_boxes).long()
                 rand_num = torch.from_numpy(np.random.permutation(fg_inds.size(0))).type_as(gt_boxes).long()
-                disable_inds = fg_inds[rand_num[:fg_inds.size(0)-num_fg]]
+                disable_inds = fg_inds[rand_num[:fg_inds.size(0)-num_fg]]#忽略过多的前景样本
                 labels[i][disable_inds] = -1
 
             num_bg = cfg.TRAIN.RPN_BATCHSIZE - sum_fg[i]
 
             # subsample negative labels if we have too many
-            if sum_bg[i] > num_bg:
+            if sum_bg[i] > num_bg:#采样的背景数量过多
                 bg_inds = torch.nonzero(labels[i] == 0).view(-1)
                 #rand_num = torch.randperm(bg_inds.size(0)).type_as(gt_boxes).long()
 
                 rand_num = torch.from_numpy(np.random.permutation(bg_inds.size(0))).type_as(gt_boxes).long()
-                disable_inds = bg_inds[rand_num[:bg_inds.size(0)-num_bg]]
+                disable_inds = bg_inds[rand_num[:bg_inds.size(0)-num_bg]]#忽略过多的背景样本
                 labels[i][disable_inds] = -1
 
-        offset = torch.arange(0, batch_size)*gt_boxes.size(1)
+        offset = torch.arange(0, batch_size)*gt_boxes.size(1)#[0, num_gt_boxes*1, num_gt_boxes*2,...,num_gt_boxes*(N-1)]
 
-        argmax_overlaps = argmax_overlaps + offset.view(batch_size, 1).type_as(argmax_overlaps)
+        argmax_overlaps = argmax_overlaps + offset.view(batch_size, 1).type_as(argmax_overlaps)#[N, num_inside_anchors]
         bbox_targets = _compute_targets_batch(anchors, gt_boxes.view(-1,5)[argmax_overlaps.view(-1), :].view(batch_size, -1, 5))
-
+        # gt_boxes.view(-1,5)[argmax_overlaps.view(-1), :].view(batch_size, -1, 5) [N, num_inside_anchors, 5]
+        # gt_boxes [N, num_gt_boxes, 5]
+        # bbox_targets：每个anchor对应的gt_boxes的bbox_targets
+        
         # use a single value instead of 4 values for easy index.
-        bbox_inside_weights[labels==1] = cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS[0]
+        bbox_inside_weights[labels==1] = cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS[0]#正样本的四个位置信息的inside权重赋值,仅使用单个
 
         if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
-            num_examples = torch.sum(labels[i] >= 0)
-            positive_weights = 1.0 / num_examples
-            negative_weights = 1.0 / num_examples
+            num_examples = torch.sum(labels[i] >= 0)#正负样本数量
+            positive_weights = 1.0 / num_examples#正样本的权值
+            negative_weights = 1.0 / num_examples#负样本的权值
         else:
             assert ((cfg.TRAIN.RPN_POSITIVE_WEIGHT > 0) &
                     (cfg.TRAIN.RPN_POSITIVE_WEIGHT < 1))
 
-        bbox_outside_weights[labels == 1] = positive_weights
+        bbox_outside_weights[labels == 1] = positive_weights#1/num_examples
         bbox_outside_weights[labels == 0] = negative_weights
 
-        labels = _unmap(labels, total_anchors, inds_inside, batch_size, fill=-1)
-        bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, batch_size, fill=0)
-        bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, batch_size, fill=0)
-        bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, batch_size, fill=0)
+        labels = _unmap(labels, total_anchors, inds_inside, batch_size, fill=-1)#得到最后的labels[N, num_inside_anchors]->[N, num_anchors]
+        bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, batch_size, fill=0)#bbox_targets[N, num_inside_anchors]->[N, num_anchors]
+        bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, batch_size, fill=0)#[N, num_inside_anchors]->[N, num_anchors]
+        bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, batch_size, fill=0)[N, num_inside_anchors]->[N, num_anchors]
 
         outputs = []
 
