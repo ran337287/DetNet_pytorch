@@ -7,7 +7,7 @@
 # --------------------------------------------------------
 # Reorganized and modified by Jianwei Yang and Jiasen Lu
 # --------------------------------------------------------
-
+#生成对应的bbox_targets,label_targets,以及bbox_inside_weights, bbox_outside_weights
 import torch
 import torch.nn as nn
 import numpy as np
