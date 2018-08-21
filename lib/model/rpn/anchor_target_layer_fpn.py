@@ -92,7 +92,7 @@ class _AnchorTargetLayer_FPN(nn.Module):
 
         gt_max_overlaps[gt_max_overlaps==0] = 1e-5 #0样本赋值是为了不与overlaps相等
         keep = torch.sum(overlaps.eq(gt_max_overlaps.view(batch_size,1,-1).expand_as(overlaps)), 2)#每幅图像的overlaps与gt_max_overlaps对应
-                                                                                                   #统计最大iou
+                                                                                                   #gt映射的最大iou对应的anchor。
                                                                                                    #keep=[N,num_inside_anchors]
         if torch.sum(keep) > 0:#将最大iou的label置于1
             labels[keep>0] = 1
