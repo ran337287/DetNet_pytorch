@@ -88,7 +88,7 @@ class _AnchorTargetLayer_FPN(nn.Module):
         gt_max_overlaps, _ = torch.max(overlaps, 1)# gt_max_overlaps=[N, num_gt_boxes], 找到与gt_boxes映射的iou最大的anchor,及其iou
 
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0 #设置负样本标签
+            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0 #设置负样本标签clobber_positives为false时，执行，即此时在设置正样本前设置负样本
 
         gt_max_overlaps[gt_max_overlaps==0] = 1e-5 #0样本赋值是为了不与overlaps相等
         keep = torch.sum(overlaps.eq(gt_max_overlaps.view(batch_size,1,-1).expand_as(overlaps)), 2)#每幅图像的overlaps与gt_max_overlaps对应
@@ -101,7 +101,7 @@ class _AnchorTargetLayer_FPN(nn.Module):
         labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1#正样本
 
         if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0#负样本
+            labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0#负样本,clobber_positives为True时执行，即在设置正样本之后设置负样本。
 
         num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)#前景数量 0.5*256=128,总的正负样本数一共256
 
